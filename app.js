@@ -1,16 +1,20 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const AWS = require('aws-sdk');
-const nodemailer = require('nodemailer');
+const path = require('path');
+const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
+const session = require('express-session');
+const flash = require('connect-flash');
+const ejs = require('ejs');
 const stripe = require('stripe')('your_stripe_secret_key');
-const analytics = require('universal-analytics');
+const sgMail = require('@sendgrid/mail');
+const aws = require('aws-sdk');
+const multer = require('multer');
+const multerS3 = require('multer-s3');
 
 const app = express();
-app.use(express.json());
 
-// Connect to MongoDB
+// MongoDB connection
 mongoose.connect('mongodb://localhost/ecommerce-platform', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -18,79 +22,70 @@ mongoose.connect('mongodb://localhost/ecommerce-platform', {
   useCreateIndex: true
 });
 
-// User model
-const User = mongoose.model('User', {
-  name: String,
-  email: { type: String, unique: true },
-  password: String,
-  role: { type: String, enum: ['customer', 'vendor', 'admin'], default: 'customer' },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-});
+// Middleware
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(cookieParser());
+app.use(session({
+  secret: 'your_secret_key',
+  resave: false,
+  saveUninitialized: true
+}));
+app.use(flash());
+app.use(express.static(path.join(__dirname, 'public')));
+app.set('view engine', 'ejs');
 
-// Product model
-const Product = mongoose.model('Product', {
-  name: String,
-  description: String,
-  price: Number,
-  stock: Number,
-  image: String,
-  vendorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-});
+// Stripe integration
+app.use(stripe.initialize());
 
-// Order model
-const Order = mongoose.model('Order', {
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  items: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
-  total: Number,
-  status: { type: String, enum: ['pending', 'processing', 'shipped', 'delivered'], default: 'pending' },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-});
+// SendGrid integration
+sgMail.setApiKey('your_sendgrid_api_key');
 
-// Review model
-const Review = mongoose.model('Review', {
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
-  rating: { type: Number, min: 1, max: 5 },
-  comment: String,
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+// AWS S3 integration
+aws.config.update({
+  accessKeyId: 'your_aws_access_key_id',
+  secretAccessKey: 'your_aws_secret_access_key',
+  region: 'your_aws_region'
 });
-
-// User registration
-app.post('/register', async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-    const user = new User({ name, email, password: await bcrypt.hash(password, 10) });
-    await user.save();
-    res.status(201).json({ message: 'User registered successfully' });
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-});
-
-// User authentication
-app.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(401).json({ message: 'Invalid email or password' });
+const s3 = new aws.S3();
+const upload = multer({
+  storage: multerS3({
+    s3: s3,
+    bucket: 'your_s3_bucket_name',
+    acl: 'public-read',
+    metadata: function (req, file, cb) {
+      cb(null, { fieldName: file.fieldname });
+    },
+    key: function (req, file, cb) {
+      cb(null, `${Date.now().toString()}-${file.originalname}`)
     }
-    const token = jwt.sign({ userId: user._id }, 'your_secret_key', { expiresIn: '1h' });
-    res.json({ token });
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
+  })
 });
 
-// User profile management
-app.get('/profile', async (req, res) => {
-  try {
-    const user = await User.findById(req.user.userId);
-    res.json(user);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
+// Routes
+const authRoutes = require('./routes/auth');
+const vendorRoutes = require('./routes/vendor');
+const productRoutes = require('./routes/product');
+const cartRoutes = require('./routes/cart');
+const orderRoutes = require('./routes/order');
+const reviewRoutes = require('./routes/review');
+const adminRoutes = require('./routes/admin');
+
+app.use('/auth', authRoutes);
+app.use('/vendor', vendorRoutes);
+app.use('/product', productRoutes);
+app.use('/cart', cartRoutes);
+app.use('/order', orderRoutes);
+app.use('/review', reviewRoutes);
+app.use('/admin', adminRoutes);
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send('Something went wrong!');
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});

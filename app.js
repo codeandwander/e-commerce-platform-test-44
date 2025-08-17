@@ -1,88 +1,96 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const stripe = require('stripe')('your_stripe_secret_key');
-const nodemailer = require('nodemailer');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const AWS = require('aws-sdk');
+const nodemailer = require('nodemailer');
+const stripe = require('stripe')('your_stripe_secret_key');
+const analytics = require('universal-analytics');
 
 const app = express();
+app.use(express.json());
 
 // Connect to MongoDB
-mongoose.connect('mongodb://localhost/ecommerce', {
+mongoose.connect('mongodb://localhost/ecommerce-platform', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
   useFindAndModify: false,
   useCreateIndex: true
 });
 
-// Middleware
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(cors());
-
-// AWS S3 configuration
-const s3 = new AWS.S3({
-  accessKeyId: 'your_aws_access_key',
-  secretAccessKey: 'your_aws_secret_key',
-  region: 'your_aws_region'
+// User model
+const User = mongoose.model('User', {
+  name: String,
+  email: { type: String, unique: true },
+  password: String,
+  role: { type: String, enum: ['customer', 'vendor', 'admin'], default: 'customer' },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
-// SendGrid configuration
-const transporter = nodemailer.createTransport({
-  service: 'sendgrid',
-  auth: {
-    user: 'your_sendgrid_username',
-    pass: 'your_sendgrid_password'
+// Product model
+const Product = mongoose.model('Product', {
+  name: String,
+  description: String,
+  price: Number,
+  stock: Number,
+  image: String,
+  vendorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+// Order model
+const Order = mongoose.model('Order', {
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  items: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+  total: Number,
+  status: { type: String, enum: ['pending', 'processing', 'shipped', 'delivered'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+// Review model
+const Review = mongoose.model('Review', {
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+  rating: { type: Number, min: 1, max: 5 },
+  comment: String,
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+// User registration
+app.post('/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    const user = new User({ name, email, password: await bcrypt.hash(password, 10) });
+    await user.save();
+    res.status(201).json({ message: 'User registered successfully' });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 });
 
-// User authentication routes
-app.post('/register', userController.register);
-app.post('/login', userController.login);
-
-// Vendor routes
-app.post('/vendor/register', vendorController.register);
-app.get('/vendor/dashboard', vendorController.getDashboard);
-app.post('/vendor/products', vendorController.createProduct);
-app.put('/vendor/products/:id', vendorController.updateProduct);
-app.delete('/vendor/products/:id', vendorController.deleteProduct);
-
-// Product routes
-app.get('/products', productController.getProducts);
-app.get('/products/search', productController.searchProducts);
-app.get('/products/filters', productController.getFilters);
-app.post('/cart', cartController.addToCart);
-app.delete('/cart/:id', cartController.removeFromCart);
-app.post('/checkout', cartController.checkout);
-
-// Order routes
-app.get('/orders', orderController.getOrders);
-app.get('/orders/:id', orderController.getOrder);
-app.post('/orders/:id/track', orderController.trackOrder);
-
-// Review routes
-app.post('/reviews', reviewController.createReview);
-app.get('/reviews/:productId', reviewController.getReviews);
-
-// Admin routes
-app.get('/admin/dashboard', adminController.getDashboard);
-app.get('/admin/users', adminController.getUsers);
-app.put('/admin/users/:id', adminController.updateUser);
-app.get('/admin/vendors', adminController.getVendors);
-app.put('/admin/vendors/:id', adminController.updateVendor);
-app.get('/admin/commissions', adminController.getCommissions);
-app.put('/admin/commissions/:id', adminController.updateCommission);
-app.get('/admin/analytics', adminController.getAnalytics);
-app.post('/admin/moderate', adminController.moderateContent);
-
-// Error handling
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send('Something went wrong!');
+// User authentication
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+    const token = jwt.sign({ userId: user._id }, 'your_secret_key', { expiresIn: '1h' });
+    res.json({ token });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+// User profile management
+app.get('/profile', async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    res.json(user);
+  } catch (err) {
+    res.status(400).json({ message: err.message });

@@ -1,44 +1,53 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
 const path = require('path');
-const morgan = require('morgan');
 const cors = require('cors');
 const helmet = require('helmet');
+const morgan = require('morgan');
 const compression = require('compression');
-const dotenv = require('dotenv');
 
-dotenv.config();
+const userRoutes = require('./routes/userRoutes');
+const vendorRoutes = require('./routes/vendorRoutes');
+const productRoutes = require('./routes/productRoutes');
+const cartRoutes = require('./routes/cartRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const reviewRoutes = require('./routes/reviewRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
+mongoose.connect('mongodb://localhost/ecommerce-platform', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
   useFindAndModify: false,
   useCreateIndex: true,
 })
-.then(() => console.log('MongoDB connected'))
-.catch((err) => console.log(err));
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.log(err));
 
 // Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cookieParser());
 app.use(cors());
 app.use(helmet());
+app.use(morgan('dev'));
 app.use(compression());
 
-// Static files
+// Serve static files
 app.use('/static', express.static(path.join(__dirname, 'public')));
 
 // Routes
-app.use('/api/users', require('./routes/userRoutes'));
-app.use('/api/vendors', require('./routes/vendorRoutes'));
-app.use('/api/products', require('./routes/productRoutes'));
-app.use('/api/orders', require('./routes/orderRoutes'));
-app.use('/api/reviews', require('./routes/reviewRoutes'));
-app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/users', userRoutes);
+app.use('/api/vendors', vendorRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Error handling
 app.use((err, req, res, next) => {
@@ -46,7 +55,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal server error' });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`Server running on port ${port}`));
 
-FILENAME: routes/userRoutes.js
+FILENAME: userRoutes.js

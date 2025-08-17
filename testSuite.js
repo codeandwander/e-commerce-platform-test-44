@@ -1,0 +1,35 @@
+const { testUserRegistration, testUserAuthentication } = require('./userTests');
+const { testVendorDashboard } = require('./vendorTests');
+const { testProductCatalog } = require('./productTests');
+const { testShoppingCart, testCheckoutProcess } = require('./cartTests');
+const { testPaymentIntegration } = require('./paymentTests');
+const { testOrderTracking } = require('./orderTests');
+const { testReviewAndRatingSystem } = require('./reviewTests');
+const { testStripeIntegration } = require('./stripeTests');
+const { testSendGridIntegration } = require('./sendgridTests');
+const { testAWSS3Integration } = require('./awsTests');
+const { testGoogleAnalyticsIntegration } = require('./googleAnalyticsTests');
+const { testAdminDashboard } = require('./adminTests');
+const { testCommissionManagement } = require('./commissionTests');
+const { testAnalyticsAndReporting } = require('./analyticsTests');
+const { testContentModerationTools } = require('./contentModerationTests');
+
+describe('E-commerce Platform Test Suite', () => {
+  testUserRegistration();
+  testUserAuthentication();
+  testVendorDashboard();
+  testProductCatalog();
+  testShoppingCart();
+  testCheckoutProcess();
+  testPaymentIntegration();
+  testOrderTracking();
+  testReviewAndRatingSystem();
+  testStripeIntegration();
+  testSendGridIntegration();
+  testAWSS3Integration();
+  testGoogleAnalyticsIntegration();
+  testAdminDashboard();
+  testCommissionManagement();
+  testAnalyticsAndReporting();
+  testContentModerationTools();
+});
